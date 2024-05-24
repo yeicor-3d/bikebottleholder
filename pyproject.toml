@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "bikebottleholder"
+version = "0.1.0"
+description = ""
+authors = ["Yeicor <4929005+Yeicor@users.noreply.github.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+build123d = "^0.5.0"
+yacv-server = "^0.8.10"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
