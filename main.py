@@ -254,4 +254,4 @@ else:
     show_all()
 
     if os.getenv('yacv_export'):
-        export_all('.', lambda name, obj: name == 'bike-bottle-holder')
+        export_all('.', lambda name, obj: name == 'bike_bottle_holder')
