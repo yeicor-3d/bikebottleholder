@@ -25,9 +25,9 @@ bottle_top_extrusion = 16 * MM
 bottle_top_angle = 24  # degrees
 
 # Bike parameters
-bike_screw_head_radius = 6 * MM
-bike_screw_radius = 3 * MM
-bike_screw_head_height = 5 * MM
+bike_screw_head_radius = 5.5 * MM
+bike_screw_radius = 2.8 * MM
+bike_screw_head_height = 6.5 * MM
 bike_screw_separation = 64 * MM
 bike_screw_separation_tolerance = 10 * MM
 bike_bottom_space = 75 * MM
