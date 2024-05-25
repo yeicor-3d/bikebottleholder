@@ -39,7 +39,7 @@ jobs:
       - run: "poetry install"
 
       # Build
-      - run: "echo 'YACV_DISABLE_SERVER=True' >> $GITHUB_ENV && echo 'yacv_export=True' >> $GITHUB_ENV"
+      - run: "printf 'YACV_DISABLE_SERVER=True\nexport_yacv=True\nexport_stl=True\n' >> $GITHUB_ENV"
       - run: "poetry run python main.py"
       - run: "final=True poetry run python main.py"
       - run: "mkdir export && mv *.glb *.stl export/"
