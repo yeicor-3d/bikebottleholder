@@ -19,7 +19,7 @@ wall = 3 * min_wall  # 3 perimeters on XY
 
 # Bottle parameters (should be a perfect fit)
 bottle_body_height = 215 * MM
-bottle_body_radius = 8.0 / 2 * CM
+bottle_body_radius = 8.18 / 2 * CM
 bottle_body_fillet = 1 * CM
 bottle_top_extrusion = 16 * MM
 bottle_top_angle = 24  # degrees
