@@ -21,8 +21,8 @@ wall = 3 * min_wall  # 3 perimeters on XY
 bottle_body_height = 215 * MM
 bottle_body_radius = 8.18 / 2 * CM
 bottle_body_fillet = 1 * CM
-bottle_top_extrusion = 16 * MM
-bottle_top_angle = 24  # degrees
+bottle_top_extrusion = 3 * MM
+bottle_top_angle = 30  # degrees
 
 # Bike parameters
 bike_screw_head_radius = 5.5 * MM
@@ -51,7 +51,8 @@ with BuildPart() as bottle:
         Circle(radius=bottle_body_radius)
     extrude(amount=bottle_body_height, taper=0)
     extrude(faces().group_by(Axis.Z)[-1], amount=bottle_top_extrusion, taper=bottle_top_angle)
-    fillet(edges(), radius=bottle_body_fillet)
+    fillet(edges() - edges().group_by(Axis.Z)[0], radius=min(bottle_body_fillet, bottle_top_extrusion / 2))
+    fillet(edges().group_by(Axis.Z)[0], radius=bottle_body_fillet)
 bottle_height = bottle_body_height + bottle_top_extrusion
 
 core_plane = Plane.XY.shift_origin((bottle_body_radius + tol, 0)).offset(-holder_thickness)
@@ -89,8 +90,8 @@ with BuildPart() as holder_core:
         # extrude(amount=used_profile_y / 2, both=True)
         revolve(revolution_arc=holder_core_angle)
         # Perform a second revolve to align with border (simpler fillet later)
-        rev_axis = Axis(vertices().group_by(Axis.Y)[-1].group_by(Axis.Z)[-1].vertex().center(), (0, 0, -1))
-        revolve(faces().group_by(Axis.Y)[-1], axis=rev_axis, revolution_arc=holder_core_angle)
+        # rev_axis = Axis(vertices().group_by(Axis.Y)[-1].group_by(Axis.Z)[-1].vertex().center(), (0, 0, -1))
+        # revolve(faces().group_by(Axis.Y)[-1], axis=rev_axis, revolution_arc=holder_core_angle)
         mirror()
 
     # Add a zip tie hole in the middle of the left face, through the complete holder
@@ -180,8 +181,11 @@ bike_bottle_holder = fillet(to_fillet, radius=holder_thickness)  # 2
 to_fillet = bike_bottle_holder.edges().filter_by(GeomType.LINE) \
     .filter_by(Axis.Z).group_by(Axis.X)[-1].group_by(Axis.Z)[0]
 bike_bottle_holder = fillet(to_fillet, radius=holder_thickness)  # 3
-to_fillet = bike_bottle_holder.edges().group_by(Axis.Z)[-1]
-bike_bottle_holder = fillet(to_fillet, radius=holder_thickness)  # 4
+to_fillet = bike_bottle_holder.edges().group_by(Axis.Z)[-1].filter_by(GeomType.LINE)
+to_fillet -= to_fillet.group_by(Axis.X)[0]
+bike_bottle_holder = fillet(to_fillet, radius=extrude_by/3)  # 4
+to_fillet = bike_bottle_holder.edges().group_by(Axis.Z)[-1].filter_by(GeomType.CIRCLE).group_by(Axis.X)[0]
+bike_bottle_holder = fillet(to_fillet, radius=extrude_by/3)  # 4
 del holder_core, to_reinforce, to_fillet  # , bottle
 
 # Assemble the grabbers, as fusing them is too slow/buggy and the slicer should be able to handle it
