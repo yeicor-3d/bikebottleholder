@@ -235,6 +235,10 @@ if os.getenv('export_stl'):
     print('Exporting STL file...')
     export_stl(bike_bottle_holder, 'bike-bottle-holder.stl')
 
+if os.getenv('export_step'):
+    print('Exporting STEP file...')
+    export_step(bike_bottle_holder, 'bike-bottle-holder.step')
+
 try:
     from yacv_server import *
 
