@@ -29,17 +29,22 @@ bike_screw_head_radius = 5.5 * MM
 bike_screw_radius = 2.8 * MM
 bike_screw_head_height = 6.5 * MM
 bike_screw_separation = 64 * MM
-bike_screw_separation_tolerance = bottle_body_height / 2
+bike_screw_separation_tolerance = 10 * MM
 bike_bottom_space = 75 * MM
 
-# Holder parameters
+# Cage parameters
 holder_thickness = 2 * wall
 holder_core_pct = 0.75  # > 0, <= 0.9
-holder_zip_tie_hole_radius = 2.5 * MM  # <= holder_thickness + bike_screw_radius * 2
 holder_bottom_reinforcement = 3 * MM
-holder_grabber_side = 20 * MM  # Approximately...
-holder_grabber_angle = 42  # degrees (of deviation from going straight down)
-holder_grabber_sep = 10 * MM  # Approximately...
+
+# Cage "grabbers" parameters
+# NOTE: Each parameter can be configured for the left-handed and right-handed side
+holder_grabber_side = [20 * MM, 20 * MM]  # Approximately...
+holder_grabber_sep = [20 * MM, 20 * MM]  # Approximately...
+holder_grabber_angle = [45, 45]  # degrees (of deviation from going straight down)
+holder_grabber_z_start_offset = [0, bottle_body_height * 1.5]
+holder_grabber_half_side = 1  # Side with partial grabbers: 0 for left, 1 for right
+holder_grabber_half_pct = 0.75  # How many partial grabbers to add (percentage of the total)
 
 
 def bb_to_box(_bb: BoundBox) -> Box:
@@ -94,12 +99,6 @@ with BuildPart() as holder_core:
         # revolve(faces().group_by(Axis.Y)[-1], axis=rev_axis, revolution_arc=holder_core_angle)
         mirror()
 
-    # Add a zip tie hole in the middle of the left face, through the complete holder
-    with BuildSketch(core_plane.offset(bottle_height / 2).location * Plane.XZ.location):
-        with Locations(((bike_screw_head_height + holder_thickness) / 2, 0)):
-            Droplet(radius=holder_zip_tie_hole_radius, roof_angle=45)
-    extrude(amount=9999, both=True, mode=Mode.SUBTRACT)
-
 
     def screw_holes(rad: float) -> Sketch:
         with BuildSketch(core_plane.location * Plane.YZ.offset(-holder_thickness).location) as sk:
@@ -117,54 +116,94 @@ with BuildPart() as holder_core:
 
 # Now, for the hard part, design the grabber to be 3D printable wrapping around the bottle
 grabbers = []  # Boolean operations on sweeps may fail, so keep them separate
-vertical_side = holder_grabber_side / math.tan(math.radians(holder_grabber_angle))
-z_start_top = bottle_height - fillet_top_radius
-holder_grabber_count = int(z_start_top // (vertical_side + holder_grabber_sep))
-# holder_grabber_count = 0  # For performance while testing
-for hsg_index in range(holder_grabber_count):
-    grabber_lines = []
-    z_start = z_start_top - hsg_index * (vertical_side + holder_grabber_sep)
-    num_samples = int(z_start)  # ~1mm per sample (should be way more than enough as we are using splines)
-    z_per_step = (1 / (num_samples - 1)) * z_start
-    side_per_step = z_per_step * math.tan(math.radians(holder_grabber_angle))
-    start_angle = holder_core_angle / 2  # Clearly inside the core (to avoid overflowing corners at the top
-    angle_per_step = math.degrees(math.asin(side_per_step / (bottle_body_radius + tol + holder_thickness / 2)))
-    print('Grabber', hsg_index + 1, '/', holder_grabber_count)
-    for bi_normal_off in [eps, 0]:  # Build the binormal at the same time :)
-        with BuildLine() as grabber_line:  # 3D sweep path
-            xyz = []
-            for z_index in range(num_samples):
-                z = z_start - z_index * z_per_step
-                angle = start_angle + z_index * angle_per_step + bi_normal_off  # Always horizontal
-                x = math.cos(math.radians(angle)) * (bottle_body_radius + tol + holder_thickness / 2)
-                y = math.sin(math.radians(angle)) * (bottle_body_radius + tol + holder_thickness / 2)
-                xyz.append((x, y, z))
-            Spline(*xyz)
-        grabber_lines.append(grabber_line.line)
-        del grabber_line
+left_right_iter = list(range(2))
+if holder_grabber_half_side == 0:  # Other grabbers must already be known for cutting
+    left_right_iter = list(reversed(left_right_iter))
+last_top_grabber_line = None
+for left_right in left_right_iter:
+    # Grabber parameters
+    g_side = holder_grabber_side[left_right]
+    g_sep = holder_grabber_sep[left_right]
+    g_angle = holder_grabber_angle[left_right]
+    g_z_start_offset = holder_grabber_z_start_offset[left_right]
+    g_flip = 1 if left_right == 0 else -1  # Utility
+    # Build...
+    vertical_side = g_side / math.tan(math.radians(g_angle))
+    vertical_side_with_sep = vertical_side + g_sep
+    z_start_top = bottle_height - fillet_top_radius + g_z_start_offset
+    g_count = int(z_start_top // vertical_side_with_sep)
+    # holder_grabber_count = 0  # For performance while testing
+    print('Grabber', 'left' if left_right == 0 else 'right', 'count:', g_count, 'z_start:', z_start_top,
+          'vertical_side:', vertical_side)
+    for hsg_index in range(g_count):
+        # Build the grabber lines to sweep
+        grabber_lines = []
+        z_start = z_start_top - hsg_index * vertical_side_with_sep
+        max_num_samples = int(z_start)  # ~1mm per sample (should be way more than enough as we are using splines)
+        z_per_step = (1 / (max_num_samples - 1)) * z_start
+        side_per_step = math.fabs(z_per_step * math.tan(math.radians(g_angle)))
+        start_angle = g_flip * holder_core_angle / 2  # Clearly inside the core
+        angle_per_step = g_flip * math.degrees(
+            math.asin(side_per_step / (bottle_body_radius + tol + holder_thickness / 2)))
+        print('Grabber', hsg_index + 1, '/', g_count, '(right)' if left_right > 0 else '(left)',
+              z_start, max_num_samples, g_angle, z_per_step, side_per_step, start_angle, angle_per_step)
+        for bi_normal_off in [eps, 0]:  # Build the binormal at the same time :)
+            with BuildLine() as grabber_line:  # 3D sweep path
+                xyz = []
+                for z_index in range(max_num_samples):
+                    z = z_start - z_index * z_per_step
+                    angle = start_angle + z_index * angle_per_step + bi_normal_off  # Always horizontal
+                    if math.fabs(z_index * angle_per_step) > 360 - holder_core_angle:
+                        break
+                    x = math.cos(math.radians(angle)) * (bottle_body_radius + tol + holder_thickness / 2)
+                    y = math.sin(math.radians(angle)) * (bottle_body_radius + tol + holder_thickness / 2)
+                    xyz.append(Vector(x, y, z))
+                assert len(xyz) > 1, 'Not enough points for the grabber line'
+                Spline(*xyz)
+            grabber_lines.append(grabber_line.line.edge())
+            del grabber_line
 
-    with BuildSketch(Location(grabber_lines[0] @ 0, start_angle - 90)) as grabber_profile:
-        with BuildLine() as grabber_profile_line:
-            arc_in = RadiusArc((-holder_grabber_side / 2, holder_thickness / 2),
-                               (holder_grabber_side / 2, holder_thickness / 2), bottle_body_radius + tol)
-            arc_out = RadiusArc((-holder_grabber_side / 2, -holder_thickness / 2),
-                                (holder_grabber_side / 2, -holder_thickness / 2),
-                                bottle_body_radius + tol + holder_thickness)
-            # Offset center to avoid slightly overlapping bottle, which tends to cause issues
-            _wanted_center = (arc_out @ 0.5 + arc_in @ 0.5) / 2 + Vector(0, -tol, 0)
-            Spline(arc_in @ 1, arc_out @ 1, tangents=[arc_in % 1, -(arc_out % 1)], tangent_scalars=[2.5, 2.5])
-            Spline(arc_out @ 0, arc_in @ 0, tangents=[-(arc_out % 0), arc_in % 0], tangent_scalars=[2.5, 2.5])
-            del arc_in, arc_out
-        make_face(grabber_profile_line.line.move(Location(-_wanted_center)).edges())
-    del grabber_profile_line  # Also used for the bottom grabber
+        # Cutting sweep lines for "half" grabbers
+        if last_top_grabber_line is None:
+            last_top_grabber_line = xyz
+        if left_right == holder_grabber_half_side and hsg_index < g_count * holder_grabber_half_pct:
+            my_grabber_line = xyz
+            my_closest_index = -1
+            my_closest_distance = float('inf')
+            for i, xyz in enumerate(my_grabber_line):  # HACK: This could be done much faster
+                for j, last_xyz in enumerate(last_top_grabber_line):
+                    distance = (xyz - last_xyz).length
+                    if distance < my_closest_distance:
+                        my_closest_distance = distance
+                        my_closest_index = i
+            if my_closest_index < 0 or my_closest_distance > 1:
+                print('Warning: Could not find the closest point to the last top grabber')
+                continue
+            else:
+                grabber_lines[0] = grabber_lines[0].trim((my_closest_index + 1) / len(my_grabber_line), 1.0)
+                grabber_lines[1] = grabber_lines[1].trim((my_closest_index + 1) / len(my_grabber_line), 1.0)
+            del my_grabber_line
 
-    sweep_obj = sweep(grabber_profile.sketch, grabber_lines[0], binormal=grabber_lines[1].edge(), mode=Mode.PRIVATE)
-    del grabber_lines, grabber_profile
+        # Build the grabber profile
+        sketch_loc = Plane(grabber_lines[0] @ 0, (grabber_lines[0] @ 0).normalized()).location * Rotation(0, 0, -90)
+        with BuildSketch(sketch_loc) as grabber_profile:
+            with BuildLine() as grabber_profile_line:
+                arc_in = RadiusArc((-g_side / 2, holder_thickness / 2),
+                                   (g_side / 2, holder_thickness / 2), bottle_body_radius + tol)
+                arc_out = RadiusArc((-g_side / 2, -holder_thickness / 2),
+                                    (g_side / 2, -holder_thickness / 2),
+                                    bottle_body_radius + tol + holder_thickness)
+                # Offset center to avoid slightly overlapping bottle, which tends to cause issues
+                _wanted_center = (arc_out @ 0.5 + arc_in @ 0.5) / 2 + Vector(0, -tol, 0)
+                Spline(arc_in @ 1, arc_out @ 1, tangents=[arc_in % 1, -(arc_out % 1)], tangent_scalars=[2.5, 2.5])
+                Spline(arc_out @ 0, arc_in @ 0, tangents=[-(arc_out % 0), arc_in % 0], tangent_scalars=[2.5, 2.5])
+                del arc_in, arc_out
+            make_face(grabber_profile_line.line.move(Location(-_wanted_center)).edges())
+        del sketch_loc, grabber_profile_line  # Also used for the bottom grabber
 
-    print('Mirroring...')
-    grabbers.append(sweep_obj)
-    grabbers.append(mirror(sweep_obj, mode=Mode.PRIVATE))
-    del sweep_obj
+        grabbers.append(sweep(grabber_profile.sketch, grabber_lines[0], binormal=grabber_lines[1].edge()))
+        del grabber_lines, grabber_profile
+del last_top_grabber_line
 
 # Final merge
 bike_bottle_holder = holder_core.part  # + grabber.part
