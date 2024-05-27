@@ -51,6 +51,7 @@ def bb_to_box(_bb: BoundBox) -> Box:
     return Box(_bb.max.X - _bb.min.X, _bb.max.Y - _bb.min.Y, _bb.max.Z - _bb.min.Z,
                mode=Mode.PRIVATE).translate(_bb.center())
 
+
 with BuildPart() as bottle:
     with BuildSketch():
         Circle(radius=bottle_body_radius)
@@ -112,7 +113,6 @@ with BuildPart() as holder_core:
     # Add screw holes
     extrude(screw_holes(bike_screw_head_radius), amount=bike_screw_head_height + holder_thickness, mode=Mode.SUBTRACT)
     extrude(screw_holes(bike_screw_radius), amount=9999, mode=Mode.SUBTRACT)
-
 
 # Now, for the hard part, design the grabber to be 3D printable wrapping around the bottle
 grabbers = []  # Boolean operations on sweeps may fail, so keep them separate
@@ -222,9 +222,9 @@ to_fillet = bike_bottle_holder.edges().filter_by(GeomType.LINE) \
 bike_bottle_holder = fillet(to_fillet, radius=holder_thickness)  # 3
 to_fillet = bike_bottle_holder.edges().group_by(Axis.Z)[-1].filter_by(GeomType.LINE)
 to_fillet -= to_fillet.group_by(Axis.X)[0]
-bike_bottle_holder = fillet(to_fillet, radius=extrude_by/3)  # 4
+bike_bottle_holder = fillet(to_fillet, radius=extrude_by / 3)  # 4
 to_fillet = bike_bottle_holder.edges().group_by(Axis.Z)[-1].filter_by(GeomType.CIRCLE).group_by(Axis.X)[0]
-bike_bottle_holder = fillet(to_fillet, radius=extrude_by/3)  # 4
+bike_bottle_holder = fillet(to_fillet, radius=extrude_by / 3)  # 4
 del holder_core, to_reinforce, to_fillet  # , bottle
 
 # Assemble the grabbers, as fusing them is too slow/buggy and the slicer should be able to handle it
