@@ -42,7 +42,7 @@ jobs:
       - run: "printf 'YACV_DISABLE_SERVER=True\nexport_yacv=True\nexport_step=True\nexport_stl=True\n' >> $GITHUB_ENV"
       - run: "poetry run python main.py"
       - run: "final=True poetry run python main.py"
-      - run: "mkdir export && mv *.glb *.stl export/"
+      - run: "mkdir export && mv *.glb *.stl *.step export/"
 
       # Deploy
       - uses: "actions/configure-pages@v5"
