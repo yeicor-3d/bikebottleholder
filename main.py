@@ -1,8 +1,10 @@
-import math
 import os
+from math import *
 
+import numpy as np
 from build123d import *
 from build123d import export_stl
+from scipy.optimize import minimize
 
 from droplet import Droplet
 
@@ -41,10 +43,9 @@ holder_bottom_reinforcement = 3 * MM
 # NOTE: Each parameter can be configured for the left-handed and right-handed side
 holder_grabber_side = [20 * MM, 20 * MM]  # Approximately...
 holder_grabber_sep = [20 * MM, 20 * MM]  # Approximately...
-holder_grabber_angle = [45, 45]  # degrees (of deviation from going straight down)
-holder_grabber_z_start_offset = [0, bottle_body_height * 1.5]
-holder_grabber_half_side = 1  # Side with partial grabbers: 0 for left, 1 for right
-holder_grabber_half_pct = 0.75  # How many partial grabbers to add (percentage of the total)
+holder_grabber_angle = [50, 40]  # degrees (of deviation from going straight down)
+holder_grabber_z_start_offset = [0.7 * bottle_body_height, 1.5 * bottle_body_height]  # Helps fill with half grabbers...
+holder_grabber_half_pct = [0.4, 0.65]  # How many partial grabbers to add (percentage of the total)
 
 
 def bb_to_box(_bb: BoundBox) -> Box:
@@ -68,7 +69,7 @@ with BuildPart() as holder_core:
         with Locations((bike_screw_head_height + holder_thickness, 0)):
             full_profile = (bottle_body_radius + tol) * 2
             used_profile_y = full_profile * holder_core_pct
-            holder_core_angle = math.asin((used_profile_y / 2) / (full_profile / 2)) * 180 / math.pi
+            holder_core_angle = asin((used_profile_y / 2) / (full_profile / 2)) * 180 / pi
             used_profile_x = full_profile / 2
             Rectangle(used_profile_x + tol + holder_thickness, used_profile_y, align=(Align.MAX, Align.CENTER))
         Circle(radius=bottle_body_radius + tol, align=(Align.MAX, Align.CENTER), mode=Mode.SUBTRACT)
@@ -89,7 +90,7 @@ with BuildPart() as holder_core:
     with BuildPart():
         with BuildSketch(Plane(top_face_inner_edge @ 0.5, (1, 0, 0), (0, 1, 0))):
             with BuildLine():
-                extrude_by = math.tan(math.radians(bottle_top_angle)) * bottle_top_extrusion
+                extrude_by = tan(radians(bottle_top_angle)) * bottle_top_extrusion
                 Polyline((0, 0), (0, bottle_top_extrusion), (-extrude_by, 0), close=True)
             make_face()
         del top_face_inner_edge
@@ -115,36 +116,35 @@ with BuildPart() as holder_core:
     extrude(screw_holes(bike_screw_radius), amount=9999, mode=Mode.SUBTRACT)
 
 # Now, for the hard part, design the grabber to be 3D printable wrapping around the bottle
-grabbers = []  # Boolean operations on sweeps may fail, so keep them separate
-left_right_iter = list(range(2))
-if holder_grabber_half_side == 0:  # Other grabbers must already be known for cutting
-    left_right_iter = list(reversed(left_right_iter))
+grabbers = []  # Boolean operations on sweeps may fail, so keep hem separate
 last_top_grabber_line = None
-for left_right in left_right_iter:
+for left_right_it in range(3):
+    left_right = left_right_it % 2  # Repeat once to apply half grabbers to the other side
     # Grabber parameters
     g_side = holder_grabber_side[left_right]
     g_sep = holder_grabber_sep[left_right]
     g_angle = holder_grabber_angle[left_right]
     g_z_start_offset = holder_grabber_z_start_offset[left_right]
+    g_half_pct = holder_grabber_half_pct[left_right]
     g_flip = 1 if left_right == 0 else -1  # Utility
+    o_grabber_line = last_top_grabber_line
+    last_top_grabber_line = None
     # Build...
-    vertical_side = g_side / math.tan(math.radians(g_angle))
+    vertical_side = g_side / tan(radians(g_angle))
     vertical_side_with_sep = vertical_side + g_sep
     z_start_top = bottle_height - fillet_top_radius + g_z_start_offset
-    g_count = int(z_start_top // vertical_side_with_sep)
-    # holder_grabber_count = 0  # For performance while testing
+    g_count = int(z_start_top // vertical_side_with_sep) + 1
     print('Grabber', 'left' if left_right == 0 else 'right', 'count:', g_count, 'z_start:', z_start_top,
           'vertical_side:', vertical_side)
     for hsg_index in range(g_count):
         # Build the grabber lines to sweep
         grabber_lines = []
         z_start = z_start_top - hsg_index * vertical_side_with_sep
+        start_angle = g_flip * holder_core_angle / 2  # Clearly inside the core
         max_num_samples = int(z_start)  # ~1mm per sample (should be way more than enough as we are using splines)
         z_per_step = (1 / (max_num_samples - 1)) * z_start
-        side_per_step = math.fabs(z_per_step * math.tan(math.radians(g_angle)))
-        start_angle = g_flip * holder_core_angle / 2  # Clearly inside the core
-        angle_per_step = g_flip * math.degrees(
-            math.asin(side_per_step / (bottle_body_radius + tol + holder_thickness / 2)))
+        side_per_step = fabs(z_per_step * tan(radians(g_angle)))
+        angle_per_step = g_flip * degrees(asin(side_per_step / (bottle_body_radius + tol + holder_thickness / 2)))
         print('Grabber', hsg_index + 1, '/', g_count, '(right)' if left_right > 0 else '(left)',
               z_start, max_num_samples, g_angle, z_per_step, side_per_step, start_angle, angle_per_step)
         for bi_normal_off in [eps, 0]:  # Build the binormal at the same time :)
@@ -153,10 +153,10 @@ for left_right in left_right_iter:
                 for z_index in range(max_num_samples):
                     z = z_start - z_index * z_per_step
                     angle = start_angle + z_index * angle_per_step + bi_normal_off  # Always horizontal
-                    if math.fabs(z_index * angle_per_step) > 360 - holder_core_angle:
+                    if fabs(z_index * angle_per_step) > 360 - holder_core_angle:
                         break
-                    x = math.cos(math.radians(angle)) * (bottle_body_radius + tol + holder_thickness / 2)
-                    y = math.sin(math.radians(angle)) * (bottle_body_radius + tol + holder_thickness / 2)
+                    x = cos(radians(angle)) * (bottle_body_radius + tol + holder_thickness / 2)
+                    y = sin(radians(angle)) * (bottle_body_radius + tol + holder_thickness / 2)
                     xyz.append(Vector(x, y, z))
                 assert len(xyz) > 1, 'Not enough points for the grabber line'
                 Spline(*xyz)
@@ -164,25 +164,22 @@ for left_right in left_right_iter:
             del grabber_line
 
         # Cutting sweep lines for "half" grabbers
-        if last_top_grabber_line is None:
-            last_top_grabber_line = xyz
-        if left_right == holder_grabber_half_side and hsg_index < g_count * holder_grabber_half_pct:
-            my_grabber_line = xyz
-            my_closest_index = -1
-            my_closest_distance = float('inf')
-            for i, xyz in enumerate(my_grabber_line):  # HACK: This could be done much faster
-                for j, last_xyz in enumerate(last_top_grabber_line):
-                    distance = (xyz - last_xyz).length
-                    if distance < my_closest_distance:
-                        my_closest_distance = distance
-                        my_closest_index = i
-            if my_closest_index < 0 or my_closest_distance > 1:
-                print('Warning: Could not find the closest point to the last top grabber')
+        if last_top_grabber_line is None and hsg_index >= g_count * g_half_pct:
+            last_top_grabber_line = grabber_lines[1]
+            if left_right_it == 0:  # Initial setup complete
+                break
+        if o_grabber_line is not None and hsg_index < g_count * g_half_pct:
+            # Find intersection of lines, to trim the new line
+            opt_res = minimize(lambda x: (o_grabber_line @ (x[0]) - grabber_lines[0] @ (x[1])).length,
+                               np.array([0.5, 0.5]), bounds=[(0, 1), (0, 1)], method='Nelder-Mead')
+            print('Trimming result', opt_res)
+            if not opt_res.success or opt_res.x[1] < 0 or opt_res.x[1] >= 1:
+                print('Skipping bad trim for half grabber (maybe too far from the bottle?)')
                 continue
+                # raise ValueError('Bad trim for half grabber (maybe too far from the bottle?)')
             else:
-                grabber_lines[0] = grabber_lines[0].trim((my_closest_index + 1) / len(my_grabber_line), 1.0)
-                grabber_lines[1] = grabber_lines[1].trim((my_closest_index + 1) / len(my_grabber_line), 1.0)
-            del my_grabber_line
+                grabber_lines[0] = grabber_lines[0].trim(opt_res.x[1], 1.0)
+                grabber_lines[1] = grabber_lines[1].trim(opt_res.x[1], 1.0)
 
         # Build the grabber profile
         sketch_loc = Plane(grabber_lines[0] @ 0, (grabber_lines[0] @ 0).normalized()).location * Rotation(0, 0, -90)
@@ -201,9 +198,10 @@ for left_right in left_right_iter:
             make_face(grabber_profile_line.line.move(Location(-_wanted_center)).edges())
         del sketch_loc, grabber_profile_line  # Also used for the bottom grabber
 
-        grabbers.append(sweep(grabber_profile.sketch, grabber_lines[0], binormal=grabber_lines[1].edge()))
+        if left_right_it > 0:  # Initial setup finished
+            grabbers.append(sweep(grabber_profile.sketch, grabber_lines[0], binormal=grabber_lines[1].edge()))
         del grabber_lines, grabber_profile
-del last_top_grabber_line
+del last_top_grabber_line, o_grabber_line
 
 # Final merge
 bike_bottle_holder = holder_core.part  # + grabber.part
